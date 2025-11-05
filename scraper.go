@@ -15,6 +15,8 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,17 +28,22 @@ type oxideScraper struct {
 	logger   *zap.Logger
 
 	metricNames []string
+
+	apiRequestDuration metric.Float64Gauge
+	scrapeCount        metric.Int64Counter
+	scrapeDuration     metric.Float64Gauge
 }
 
 func newOxideScraper(
 	cfg *Config,
-	logger *zap.Logger,
+	settings component.TelemetrySettings,
 	client *oxide.Client,
 ) *oxideScraper {
 	return &oxideScraper{
-		client: client,
-		cfg:    cfg,
-		logger: logger,
+		client:   client,
+		settings: settings,
+		cfg:      cfg,
+		logger:   settings.Logger,
 	}
 }
 
@@ -66,6 +73,35 @@ func (s *oxideScraper) Start(ctx context.Context, _ component.Host) error {
 	s.metricNames = metricNames
 
 	s.logger.Info("collecting metrics", zap.Any("metrics", metricNames))
+
+	meter := s.settings.MeterProvider.Meter("github.com/oxidecomputer/oxidereceiver")
+
+	s.apiRequestDuration, err = meter.Float64Gauge(
+		"oxide_receiver.api_request.duration",
+		metric.WithDescription("Duration of API requests to the Oxide API"),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create apiRequestDuration gauge: %w", err)
+	}
+
+	s.scrapeCount, err = meter.Int64Counter(
+		"oxide_receiver.scrape.count",
+		metric.WithDescription("Number of scrapes performed by the Oxide receiver"),
+		metric.WithUnit("{scrape}"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create scrapeCount counter: %w", err)
+	}
+
+	s.scrapeDuration, err = meter.Float64Gauge(
+		"oxide_receiver.scrape.duration",
+		metric.WithDescription("Total duration of the scrape operation"),
+		metric.WithUnit("s"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create scrapeDuration gauge: %w", err)
+	}
 
 	return nil
 }
@@ -106,10 +142,14 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 		})
 	}
 	if err := group.Wait(); err != nil {
+		s.scrapeCount.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "failure")))
 		return metrics, err
 	}
 	elapsed := time.Since(startTime)
 	s.logger.Info("scrape finished", zap.Float64("latency", elapsed.Seconds()))
+
+	s.scrapeDuration.Record(ctx, elapsed.Seconds())
+	s.scrapeCount.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "success")))
 
 	// Cargo-culted from https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/googlecloudmonitoringreceiver.
 	// TODO(jmcarp): Can we skip this map?
@@ -253,37 +293,11 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 		}
 	}
 
-	s.addLatencyMetrics(metrics, latencies)
+	for metricName, duration := range latencies {
+		s.apiRequestDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(attribute.String("request_name", metricName)))
+	}
 
 	return metrics, nil
-}
-
-// addLatencyMetrics creates a gauge metric for API request latencies, with
-// each request labeled by metric name. We'll use this to track performance of
-// oximeter and the receiver, and identify slow queries.
-func (s *oxideScraper) addLatencyMetrics(metrics pmetric.Metrics, latencies map[string]time.Duration) {
-	rm := metrics.ResourceMetrics().AppendEmpty()
-	rm.Resource().Attributes().PutStr("receiver", "oxide")
-
-	sm := rm.ScopeMetrics().AppendEmpty()
-	m := sm.Metrics().AppendEmpty()
-
-	m.SetName("oxide.receiver.api.request.duration")
-	m.SetDescription("Duration of API requests to the Oxide API")
-	m.SetUnit("s")
-
-	gauge := m.SetEmptyGauge()
-
-	now := pcommon.NewTimestampFromTime(time.Now())
-
-	for metricName, duration := range latencies {
-		dp := gauge.DataPoints().AppendEmpty()
-		dp.SetTimestamp(now)
-		dp.SetDoubleValue(duration.Seconds())
-
-		// Add the metric name as a label
-		dp.Attributes().PutStr("request_name", metricName)
-	}
 }
 
 func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable, series oxide.Timeseries, logger *zap.Logger) {

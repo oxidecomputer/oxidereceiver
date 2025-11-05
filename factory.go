@@ -45,7 +45,7 @@ func createMetricsReceiver(
 		return nil, err
 	}
 
-	r := newOxideScraper(rCfg, settings.Logger, client)
+	r := newOxideScraper(rCfg, settings.TelemetrySettings, client)
 	s, err := scraper.NewMetrics(r.Scrape, scraper.WithStart(r.Start), scraper.WithShutdown(r.Shutdown))
 	if err != nil {
 		return nil, err
