@@ -211,8 +211,18 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 
 				switch {
 				// Handle histograms.
+				//
+				// Note: OxQL histograms include both buckets
+				// and counts, as well as a handful of
+				// preselected quantiles estimated using the P²
+				// algorithm. We extract the buckets and counts
+				// as an otel histogram, and the quantiles as a
+				// gauge.
 				case slices.Contains([]oxide.ValueArrayType{oxide.ValueArrayTypeIntegerDistribution, oxide.ValueArrayTypeDoubleDistribution}, v0.Values.Type):
 					measure := m.SetEmptyHistogram()
+
+					quantiles := sm.Metrics().AppendEmpty()
+					quantiles.SetName(fmt.Sprintf("%s:quantiles", table.Name))
 
 					for idx, point := range series.Points.Values {
 						dp := measure.DataPoints().AppendEmpty()
@@ -228,6 +238,8 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 							if err != nil {
 								s.logger.Warn("couldn't marshal distribution value", zap.String("name", table.Name), zap.Any("value", value))
 							}
+
+							quantileGauge := quantiles.SetEmptyGauge()
 							switch v0.Values.Type {
 							case oxide.ValueArrayTypeIntegerDistribution:
 								var distValue oxide.Distributionint64
@@ -247,6 +259,8 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 									total += count
 								}
 								dp.SetCount(uint64(total))
+
+								addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99})
 							case oxide.ValueArrayTypeDoubleDistribution:
 								var distValue oxide.Distributiondouble
 								if err := json.Unmarshal(marshalled, &distValue); err != nil {
@@ -265,6 +279,8 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 									total += count
 								}
 								dp.SetCount(uint64(total))
+
+								addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99})
 							}
 						}
 					}
@@ -361,5 +377,16 @@ func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable
 		default:
 			logger.Info("Unhandled metric value type:", zap.Reflect("Type", point.Values.Type))
 		}
+	}
+}
+
+// addQuantiles emits metrics for a slice of oxide.Quantile values. In addition
+// to histogram buckets and counts, OxQL exposes a set of predefined quantile
+// estimates using the P² algorithm, which we extract here.
+func addQuantiles(g pmetric.Gauge, quantiles []oxide.Quantile) {
+	for _, quantile := range quantiles {
+		p := g.DataPoints().AppendEmpty()
+		p.SetDoubleValue(quantile.MarkerHeights[2])
+		p.Attributes().PutDouble("quantile", quantile.P)
 	}
 }
