@@ -199,7 +199,6 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 				// Create a new Metric
 				m := sm.Metrics().AppendEmpty()
 
-				// Set metric name, description, and unit
 				m.SetName(table.Name)
 
 				// Hack: get metadata from the 0th point.
@@ -221,73 +220,22 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 				case slices.Contains([]oxide.ValueArrayType{oxide.ValueArrayTypeIntegerDistribution, oxide.ValueArrayTypeDoubleDistribution}, v0.Values.Type):
 					measure := m.SetEmptyHistogram()
 
+					switch v0.MetricType {
+					case oxide.MetricTypeDelta:
+						measure.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+					case oxide.MetricTypeCumulative:
+						measure.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+					}
+
 					quantiles := sm.Metrics().AppendEmpty()
 					quantiles.SetName(fmt.Sprintf("%s:quantiles", table.Name))
+					quantileGauge := quantiles.SetEmptyGauge()
 
-					for idx, point := range series.Points.Values {
-						dp := measure.DataPoints().AppendEmpty()
-						dp.SetTimestamp(pcommon.NewTimestampFromTime(series.Points.Timestamps[idx]))
-
-						values, ok := point.Values.Values.([]any)
-						if !ok {
-							s.logger.Warn("couldn't cast values to []any", zap.String("metric", table.Name))
-						}
-						for _, value := range values {
-							// The histogram value is an `any`, so marshal and unmarshal json to fit it into the appropriate distribution type.
-							marshalled, err := json.Marshal(value)
-							if err != nil {
-								s.logger.Warn("couldn't marshal distribution value", zap.String("name", table.Name), zap.Any("value", value))
-							}
-
-							quantileGauge := quantiles.SetEmptyGauge()
-							switch v0.Values.Type {
-							case oxide.ValueArrayTypeIntegerDistribution:
-								var distValue oxide.Distributionint64
-								if err := json.Unmarshal(marshalled, &distValue); err != nil {
-									s.logger.Warn("couldn't unmarshal distribution value", zap.String("name", table.Name), zap.Any("value", value))
-								}
-								bins := make([]float64, len(distValue.Bins))
-								for idx := range distValue.Bins {
-									bins[idx] = float64(distValue.Bins[idx])
-								}
-								dp.ExplicitBounds().FromRaw(bins)
-
-								counts := dp.BucketCounts()
-								total := 0
-								for _, count := range distValue.Counts {
-									counts.Append(uint64(count))
-									total += count
-								}
-								dp.SetCount(uint64(total))
-
-								addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99})
-							case oxide.ValueArrayTypeDoubleDistribution:
-								var distValue oxide.Distributiondouble
-								if err := json.Unmarshal(marshalled, &distValue); err != nil {
-									s.logger.Warn("couldn't unmarshal distribution value", zap.String("name", table.Name), zap.Any("value", value))
-								}
-								bins := make([]float64, len(distValue.Bins))
-								for idx := range distValue.Bins {
-									bins[idx] = float64(distValue.Bins[idx])
-								}
-								dp.ExplicitBounds().FromRaw(bins)
-
-								counts := dp.BucketCounts()
-								total := 0
-								for _, count := range distValue.Counts {
-									counts.Append(uint64(count))
-									total += count
-								}
-								dp.SetCount(uint64(total))
-
-								addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99})
-							}
-						}
-					}
+					addHistogram(measure.DataPoints(), quantileGauge, table, series)
 				// Handle scalar gauge.
 				case v0.MetricType == oxide.MetricTypeGauge:
 					measure := m.SetEmptyGauge()
-					addPoint(func() pmetric.NumberDataPoint { return measure.DataPoints().AppendEmpty() }, table, series, s.logger)
+					addPoint(measure.DataPoints(), table, series)
 
 				// Handle scalar counter.
 				default:
@@ -302,7 +250,7 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 						measure.SetIsMonotonic(true)
 					}
 
-					addPoint(func() pmetric.NumberDataPoint { return measure.DataPoints().AppendEmpty() }, table, series, s.logger)
+					addPoint(measure.DataPoints(), table, series)
 				}
 
 			}
@@ -316,7 +264,78 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 	return metrics, nil
 }
 
-func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable, series oxide.Timeseries, logger *zap.Logger) ([]pmetric.NumberDataPoint, error) {
+func addHistogram(dataPoints pmetric.HistogramDataPointSlice, quantileGauge pmetric.Gauge, table oxide.OxqlTable, series oxide.Timeseries) ([]pmetric.HistogramDataPoint, []pmetric.NumberDataPoint, error) {
+	histPoints := []pmetric.HistogramDataPoint{}
+	quantilePoints := []pmetric.NumberDataPoint{}
+
+	for idx, point := range series.Points.Values {
+		dp := dataPoints.AppendEmpty()
+		dp.SetTimestamp(pcommon.NewTimestampFromTime(series.Points.Timestamps[idx]))
+
+		values, ok := point.Values.Values.([]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("couldn't cast values %+v for metric %s to []any; got unexpected type %+v", point.Values.Values, table.Name, reflect.TypeOf(point.Values.Values))
+		}
+		for _, value := range values {
+			// The histogram value is an `any`, so marshal and unmarshal json to fit it into the appropriate distribution type.
+			marshalled, err := json.Marshal(value)
+			if err != nil {
+				return nil, nil, fmt.Errorf("couldn't marshal distribution %+v for metric %s: %w", value, table.Name, err)
+			}
+
+			switch point.Values.Type {
+			case oxide.ValueArrayTypeIntegerDistribution:
+				// Unmarshall the marshalled JSON back to the expected histogram type.
+				var distValue oxide.Distributionint64
+				if err := json.Unmarshal(marshalled, &distValue); err != nil {
+					return nil, nil, fmt.Errorf("couldn't unmarshal distribution %+v for metric %s: %w", value, table.Name, err)
+				}
+
+				bins := make([]float64, len(distValue.Bins))
+				for idx := range distValue.Bins {
+					bins[idx] = float64(distValue.Bins[idx])
+				}
+				dp.ExplicitBounds().FromRaw(bins)
+
+				counts := dp.BucketCounts()
+				total := 0
+				for _, count := range distValue.Counts {
+					counts.Append(uint64(count))
+					total += count
+				}
+				dp.SetCount(uint64(total))
+
+				quantilePoints = addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99}, dp.Timestamp())
+			case oxide.ValueArrayTypeDoubleDistribution:
+				// Unmarshall the marshalled JSON back to the expected histogram type.
+				var distValue oxide.Distributiondouble
+				if err := json.Unmarshal(marshalled, &distValue); err != nil {
+					return nil, nil, fmt.Errorf("couldn't unmarshal distribution %+v for metric %s: %w", value, table.Name, err)
+				}
+
+				bins := make([]float64, len(distValue.Bins))
+				for idx := range distValue.Bins {
+					bins[idx] = float64(distValue.Bins[idx])
+				}
+				dp.ExplicitBounds().FromRaw(bins)
+
+				counts := dp.BucketCounts()
+				total := 0
+				for _, count := range distValue.Counts {
+					counts.Append(uint64(count))
+					total += count
+				}
+				dp.SetCount(uint64(total))
+
+				quantilePoints = addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99}, dp.Timestamp())
+			}
+		}
+		histPoints = append(histPoints, dp)
+	}
+	return histPoints, quantilePoints, nil
+}
+
+func addPoint(dataPoints pmetric.NumberDataPointSlice, table oxide.OxqlTable, series oxide.Timeseries) ([]pmetric.NumberDataPoint, error) {
 	points := []pmetric.NumberDataPoint{}
 	for _, point := range series.Points.Values {
 		switch point.Values.Type {
@@ -333,7 +352,7 @@ func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable
 				if !ok {
 					return nil, fmt.Errorf("couldn't cast value %+v for metric %s to float; got type %+v", value, table.Name, reflect.TypeOf(value))
 				}
-				dp := pointFactory()
+				dp := dataPoints.AppendEmpty()
 				dp.SetTimestamp(pcommon.NewTimestampFromTime(series.Points.Timestamps[idx]))
 				dp.SetIntValue(int64(intValue))
 				points = append(points, dp)
@@ -351,7 +370,7 @@ func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable
 				if !ok {
 					return nil, fmt.Errorf("couldn't cast value %+v for metric %s to float; got type %+v", value, table.Name, reflect.TypeOf(value))
 				}
-				dp := pointFactory()
+				dp := dataPoints.AppendEmpty()
 				dp.SetTimestamp(pcommon.NewTimestampFromTime(series.Points.Timestamps[idx]))
 				dp.SetDoubleValue(floatValue)
 				points = append(points, dp)
@@ -369,7 +388,7 @@ func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable
 				if !ok {
 					return nil, fmt.Errorf("couldn't cast value %+v for metric %s to bool; got type %+v", value, table.Name, reflect.TypeOf(value))
 				}
-				dp := pointFactory()
+				dp := dataPoints.AppendEmpty()
 				dp.SetTimestamp(pcommon.NewTimestampFromTime(series.Points.Timestamps[idx]))
 				intValue := 0
 				if boolValue {
@@ -379,7 +398,7 @@ func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable
 				points = append(points, dp)
 			}
 		default:
-			logger.Info("Unhandled metric value type:", zap.Reflect("Type", point.Values.Type))
+			return nil, fmt.Errorf("got unexpected metric value type %s", point.Values.Type)
 		}
 	}
 	return points, nil
@@ -388,10 +407,14 @@ func addPoint(pointFactory func() pmetric.NumberDataPoint, table oxide.OxqlTable
 // addQuantiles emits metrics for a slice of oxide.Quantile values. In addition
 // to histogram buckets and counts, OxQL exposes a set of predefined quantile
 // estimates using the P² algorithm, which we extract here.
-func addQuantiles(g pmetric.Gauge, quantiles []oxide.Quantile) {
+func addQuantiles(g pmetric.Gauge, quantiles []oxide.Quantile, timestamp pcommon.Timestamp) []pmetric.NumberDataPoint {
+	points := []pmetric.NumberDataPoint{}
 	for _, quantile := range quantiles {
 		p := g.DataPoints().AppendEmpty()
+		p.SetTimestamp(timestamp)
 		p.SetDoubleValue(quantile.MarkerHeights[2])
 		p.Attributes().PutDouble("quantile", quantile.P)
+		points = append(points, p)
 	}
+	return points
 }
