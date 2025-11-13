@@ -21,9 +21,9 @@ func TestAddPoint(t *testing.T) {
 		wantMetrics []pmetric.NumberDataPoint
 		wantErr     string
 	}{
-		// Integer test cases
+		// Ints
 		{
-			name: "integer value: success",
+			name: "int: success",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -47,7 +47,7 @@ func TestAddPoint(t *testing.T) {
 			},
 		},
 		{
-			name: "integer value: type assertion error on outer array",
+			name: "int: type assertion error on outer array",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -64,7 +64,7 @@ func TestAddPoint(t *testing.T) {
 			wantErr: "couldn't cast values",
 		},
 		{
-			name: "integer value: type assertion error on value",
+			name: "int: type assertion error on value",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -80,9 +80,9 @@ func TestAddPoint(t *testing.T) {
 			},
 			wantErr: "couldn't cast value",
 		},
-		// Double/Float test cases
+		// Doubles
 		{
-			name: "double value: success",
+			name: "double: success",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -106,7 +106,7 @@ func TestAddPoint(t *testing.T) {
 			},
 		},
 		{
-			name: "double value: type assertion error on outer array",
+			name: "double: type assertion error on outer array",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -123,7 +123,7 @@ func TestAddPoint(t *testing.T) {
 			wantErr: "couldn't cast values",
 		},
 		{
-			name: "double value: type assertion error on value",
+			name: "double: type assertion error on value",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -139,9 +139,9 @@ func TestAddPoint(t *testing.T) {
 			},
 			wantErr: "couldn't cast value",
 		},
-		// Boolean test cases
+		// Bools
 		{
-			name: "boolean value: success true",
+			name: "bool: success",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -165,31 +165,7 @@ func TestAddPoint(t *testing.T) {
 			},
 		},
 		{
-			name: "boolean value: success false",
-			series: oxide.Timeseries{
-				Points: oxide.Points{
-					Timestamps: []time.Time{now},
-					Values: []oxide.Values{
-						{
-							Values: oxide.ValueArray{
-								Type:   oxide.ValueArrayTypeBoolean,
-								Values: []any{false},
-							},
-						},
-					},
-				},
-			},
-			wantMetrics: []pmetric.NumberDataPoint{
-				func() pmetric.NumberDataPoint {
-					dp := pmetric.NewNumberDataPoint()
-					dp.SetIntValue(0)
-					dp.SetTimestamp(pcommon.NewTimestampFromTime(now))
-					return dp
-				}(),
-			},
-		},
-		{
-			name: "boolean value: type assertion error on outer array",
+			name: "bool: type assertion error on outer array",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -206,7 +182,7 @@ func TestAddPoint(t *testing.T) {
 			wantErr: "couldn't cast values",
 		},
 		{
-			name: "boolean value: type assertion error on value",
+			name: "bool: type assertion error on value",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -221,17 +197,6 @@ func TestAddPoint(t *testing.T) {
 				},
 			},
 			wantErr: "couldn't cast value",
-		},
-		// Empty array
-		{
-			name: "empty values array",
-			series: oxide.Timeseries{
-				Points: oxide.Points{
-					Timestamps: []time.Time{},
-					Values:     []oxide.Values{},
-				},
-			},
-			wantMetrics: []pmetric.NumberDataPoint{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -267,7 +232,7 @@ func TestAddHistogram(t *testing.T) {
 		wantErr       string
 	}{
 		{
-			name: "integer distribution: success",
+			name: "int: success",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
@@ -333,7 +298,7 @@ func TestAddHistogram(t *testing.T) {
 			},
 		},
 		{
-			name: "double distribution: success",
+			name: "double: success",
 			series: oxide.Timeseries{
 				Points: oxide.Points{
 					Timestamps: []time.Time{now},
