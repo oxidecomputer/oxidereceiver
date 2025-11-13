@@ -128,8 +128,7 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 	startTime := time.Now()
 	results := make([]*oxide.OxqlQueryResult, len(s.metricNames))
 
-	// Track latencies for each request by metric name
-	latencies := make(map[string]time.Duration)
+	latencies := make([]time.Duration, len(s.metricNames))
 
 	for idx, metricName := range s.metricNames {
 		query := fmt.Sprintf("get %s | filter timestamp > @now() - %dm | last 1", metricName, 15)
@@ -141,7 +140,7 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 				},
 			})
 			elapsed := time.Since(goroStartTime)
-			latencies[metricName] = elapsed
+			latencies[idx] = elapsed
 			s.logger.Info("scrape query finished", zap.String("metric", metricName), zap.String("query", query), zap.Float64("latency", elapsed.Seconds()))
 			if err != nil {
 				return err
@@ -281,8 +280,8 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 		}
 	}
 
-	for metricName, duration := range latencies {
-		s.apiRequestDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(attribute.String("request_name", metricName)))
+	for idx, metricName := range s.metricNames {
+		s.apiRequestDuration.Record(ctx, latencies[idx].Seconds(), metric.WithAttributes(attribute.String("request_name", metricName)))
 	}
 
 	return metrics, nil
