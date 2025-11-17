@@ -11,6 +11,104 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
+func TestAddLabels(t *testing.T) {
+	table := oxide.OxqlTable{Name: "test_metric"}
+
+	for _, tc := range []struct {
+		name         string
+		series       oxide.Timeseries
+		wantResource pcommon.Resource
+		wantErr      string
+	}{
+		{
+			name: "string: success",
+			series: oxide.Timeseries{
+				Fields: map[string]oxide.FieldValue{
+					"hostname": {
+						Type:  oxide.FieldValueTypeString,
+						Value: "server-01",
+					},
+				},
+			},
+			wantResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("hostname", "server-01")
+				return r
+			}(),
+		},
+		{
+			name: "int: success",
+			series: oxide.Timeseries{
+				Fields: map[string]oxide.FieldValue{
+					"port": {
+						Type:  oxide.FieldValueTypeI64,
+						Value: float64(8080),
+					},
+				},
+			},
+			wantResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutInt("port", 8080)
+				return r
+			}(),
+		},
+		{
+			name: "uuid: success",
+			series: oxide.Timeseries{
+				Fields: map[string]oxide.FieldValue{
+					"instance_id": {
+						Type:  oxide.FieldValueTypeUuid,
+						Value: "550e8400-e29b-41d4-a716-446655440000",
+					},
+				},
+			},
+			wantResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("instance_id", "550e8400-e29b-41d4-a716-446655440000")
+				return r
+			}(),
+		},
+		{
+			name: "string: type assertion error",
+			series: oxide.Timeseries{
+				Fields: map[string]oxide.FieldValue{
+					"hostname": {
+						Type:  oxide.FieldValueTypeString,
+						Value: 123,
+					},
+				},
+			},
+			wantErr: "couldn't cast label",
+		},
+		{
+			name: "int field: type assertion error",
+			series: oxide.Timeseries{
+				Fields: map[string]oxide.FieldValue{
+					"port": {
+						Type:  oxide.FieldValueTypeI64,
+						Value: "not a number",
+					},
+				},
+			},
+			wantErr: "couldn't cast label",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resource := pcommon.NewResource()
+
+			err := addLabels(tc.series, table, resource)
+
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			require.Equal(t, tc.wantResource.Attributes().AsRaw(), resource.Attributes().AsRaw())
+		})
+	}
+}
+
 func TestAddPoint(t *testing.T) {
 	now := time.Now()
 	table := oxide.OxqlTable{Name: "test_metric"}

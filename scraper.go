@@ -159,9 +159,6 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 	s.scrapeDuration.Record(ctx, elapsed.Seconds())
 	s.scrapeCount.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "success")))
 
-	// Cargo-culted from https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/googlecloudmonitoringreceiver.
-	// TODO(jmcarp): Can we skip this map?
-	resourceMetricsMap := make(map[string]pmetric.ResourceMetrics)
 	for _, result := range results {
 		for _, table := range result.Tables {
 			for _, series := range table.Timeseries {
@@ -173,38 +170,23 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 				sort.Strings(labels)
 				key = fmt.Sprintf("%s_%s", key, strings.Join(labels, "::"))
 
-				rm, exists := resourceMetricsMap[key]
-				if !exists {
-					rm = metrics.ResourceMetrics().AppendEmpty()
-					resource := rm.Resource()
-					for key, value := range series.Fields {
-						switch value.Type {
-						case oxide.FieldValueTypeString:
-							resource.Attributes().PutStr(key, value.Value.(string))
-						case oxide.FieldValueTypeI8, oxide.FieldValueTypeI16, oxide.FieldValueTypeI32, oxide.FieldValueTypeI64,
-							oxide.FieldValueTypeU8, oxide.FieldValueTypeU16, oxide.FieldValueTypeU32, oxide.FieldValueTypeU64:
-							intValue, ok := value.Value.(float64)
-							if !ok {
-								s.logger.Warn("couldn't cast label to float", zap.String("metric", table.Name), zap.String("field", key), zap.Any("value", value))
-							}
-							resource.Attributes().PutInt(key, int64(intValue))
-						default:
-							resource.Attributes().PutStr(key, fmt.Sprintf("%v", value.Value))
-						}
-					}
-					resourceMetricsMap[key] = rm
+				rm := metrics.ResourceMetrics().AppendEmpty()
+				resource := rm.Resource()
+
+				if err := addLabels(series, table, resource); err != nil {
+					s.logger.Warn("failed to parse field labels", zap.String("metric", table.Name), zap.Error(err))
+					s.metricParseErrors.Add(ctx, 1, metric.WithAttributes(
+						attribute.String("metric_name", table.Name),
+					))
 				}
 
-				// Ensure we have a ScopeMetrics to append the metric to
 				var sm pmetric.ScopeMetrics
 				if rm.ScopeMetrics().Len() == 0 {
 					sm = rm.ScopeMetrics().AppendEmpty()
 				} else {
-					// For simplicity, let's assume all metrics will share the same ScopeMetrics
 					sm = rm.ScopeMetrics().At(0)
 				}
 
-				// Create a new Metric
 				m := sm.Metrics().AppendEmpty()
 
 				m.SetName(table.Name)
@@ -285,6 +267,29 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 	}
 
 	return metrics, nil
+}
+
+func addLabels(series oxide.Timeseries, table oxide.OxqlTable, resource pcommon.Resource) error {
+	for key, value := range series.Fields {
+		switch value.Type {
+		case oxide.FieldValueTypeString:
+			strValue, ok := value.Value.(string)
+			if !ok {
+				return fmt.Errorf("couldn't cast label %+v for metric %s to string; got unexpected type %T", value.Value, table.Name, value.Value)
+			}
+			resource.Attributes().PutStr(key, strValue)
+		case oxide.FieldValueTypeI8, oxide.FieldValueTypeI16, oxide.FieldValueTypeI32, oxide.FieldValueTypeI64,
+			oxide.FieldValueTypeU8, oxide.FieldValueTypeU16, oxide.FieldValueTypeU32, oxide.FieldValueTypeU64:
+			intValue, ok := value.Value.(float64)
+			if !ok {
+				return fmt.Errorf("couldn't cast label%+v for metric %s to float64; got unexpected type %T", value.Value, table.Name, value.Value)
+			}
+			resource.Attributes().PutInt(key, int64(intValue))
+		default:
+			resource.Attributes().PutStr(key, fmt.Sprintf("%v", value.Value))
+		}
+	}
+	return nil
 }
 
 func addHistogram(dataPoints pmetric.HistogramDataPointSlice, quantileGauge pmetric.Gauge, table oxide.OxqlTable, series oxide.Timeseries) error {
