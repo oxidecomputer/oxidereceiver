@@ -109,6 +109,58 @@ func TestAddLabels(t *testing.T) {
 	}
 }
 
+func TestEnrichLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		resource     pcommon.Resource
+		silos        map[string]string
+		projects     map[string]string
+		wantResource pcommon.Resource
+	}{
+		{
+			name: "silo",
+			resource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("silo_id", "123e4567-e89b-12d3-a456-426614174000")
+				return r
+			}(),
+			silos: map[string]string{
+				"123e4567-e89b-12d3-a456-426614174000": "default",
+			},
+			projects: map[string]string{},
+			wantResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("silo_id", "123e4567-e89b-12d3-a456-426614174000")
+				r.Attributes().PutStr("silo_name", "default")
+				return r
+			}(),
+		},
+		{
+			name: "project",
+			resource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("project_id", "987fcdeb-51a2-43f7-b890-123456789abc")
+				return r
+			}(),
+			silos: map[string]string{},
+			projects: map[string]string{
+				"987fcdeb-51a2-43f7-b890-123456789abc": "my-project",
+			},
+			wantResource: func() pcommon.Resource {
+				r := pcommon.NewResource()
+				r.Attributes().PutStr("project_id", "987fcdeb-51a2-43f7-b890-123456789abc")
+				r.Attributes().PutStr("project_name", "my-project")
+				return r
+			}(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			enrichLabels(tc.resource, tc.silos, tc.projects)
+			require.Equal(t, tc.wantResource.Attributes().AsRaw(), tc.resource.Attributes().AsRaw())
+		})
+	}
+}
+
 func TestAddPoint(t *testing.T) {
 	now := time.Now()
 	table := oxide.OxqlTable{Name: "test_metric"}

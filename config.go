@@ -14,6 +14,9 @@ type Config struct {
 	Token             string   `mapstructure:"token"`
 	MetricPatterns    []string `mapstructure:"metric_patterns"`
 	ScrapeConcurrency int      `mapstructure:"scrape_concurrency"`
+
+	// AddLabels configures the receiver to add human-readable labels to metrics using the Oxide API.
+	AddLabels bool `mapstructure:"add_labels"`
 }
 
 func (cfg *Config) Validate() error {

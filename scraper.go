@@ -159,6 +159,37 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 	s.scrapeDuration.Record(ctx, elapsed.Seconds())
 	s.scrapeCount.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "success")))
 
+	// Cache mappings from resource UUIDs to human-readable names. Note: we
+	// can also add mappings for higher-cardinality resources like
+	// instances and disks, but this would add more latency to the 0th
+	// query on the page.
+	//
+	// TODO: add human-readable labels to metrics in oximeter so that we
+	// don't have to enrich them here. Tracked in
+	// https://github.com/oxidecomputer/omicron/issues/9119.
+	siloToName := map[string]string{}
+	projectToName := map[string]string{}
+	if s.cfg.AddLabels {
+		silos, err := s.client.SiloListAllPages(ctx, oxide.SiloListParams{})
+		if err != nil {
+			return metrics, fmt.Errorf("listing silos: %w", err)
+		}
+		for _, silo := range silos {
+			siloToName[silo.Id] = string(silo.Name)
+		}
+		// Note: this only lists projects in the silo corresponding to
+		// the client's authentication token. In the future, we can
+		// either add a system endpoint listing all projects for the
+		// rack, or enrich metrics with project labels in nexus.
+		projects, err := s.client.ProjectListAllPages(ctx, oxide.ProjectListParams{})
+		if err != nil {
+			return metrics, fmt.Errorf("listing projects: %w", err)
+		}
+		for _, project := range projects {
+			projectToName[project.Id] = string(project.Name)
+		}
+	}
+
 	for _, result := range results {
 		for _, table := range result.Tables {
 			for _, series := range table.Timeseries {
@@ -179,6 +210,8 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 						attribute.String("metric_name", table.Name),
 					))
 				}
+
+				enrichLabels(resource, siloToName, projectToName)
 
 				var sm pmetric.ScopeMetrics
 				if rm.ScopeMetrics().Len() == 0 {
@@ -290,6 +323,19 @@ func addLabels(series oxide.Timeseries, table oxide.OxqlTable, resource pcommon.
 		}
 	}
 	return nil
+}
+
+func enrichLabels(resource pcommon.Resource, silos map[string]string, projects map[string]string) {
+	if siloID, ok := resource.Attributes().Get("silo_id"); ok {
+		if siloName, ok := silos[siloID.Str()]; ok {
+			resource.Attributes().PutStr("silo_name", siloName)
+		}
+	}
+	if projectID, ok := resource.Attributes().Get("project_id"); ok {
+		if projectName, ok := projects[projectID.Str()]; ok {
+			resource.Attributes().PutStr("project_name", projectName)
+		}
+	}
 }
 
 func addHistogram(dataPoints pmetric.HistogramDataPointSlice, quantileGauge pmetric.Gauge, table oxide.OxqlTable, series oxide.Timeseries) error {
