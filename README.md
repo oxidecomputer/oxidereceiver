@@ -18,6 +18,7 @@ All configuration parameters are optional. If `host` and `token` are not provide
 | `scrape_concurrency` | int | `16` | Number of concurrent requests to make when scraping metrics |
 | `query_lookback` | string | `"5m"` | Lookback interval for queries sent to the Oxide API (e.g., "5m", "1h") |
 | `add_labels` | bool | `false` | Add human-readable labels to metrics using the Oxide API |
+| `insecure_skip_verify` | bool | `false` | Skip TLS certificate verification when connecting to the Oxide API (not recommended for production) |
 | `collection_interval` | duration | `1m` | Interval at which metrics are collected |
 | `initial_delay` | duration | `1s` | Initial delay before starting collection |
 | `timeout` | duration | `0s` | Timeout for the scraper (0 means no timeout) |

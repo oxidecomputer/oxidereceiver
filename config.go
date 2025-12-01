@@ -22,6 +22,10 @@ type Config struct {
 	// AddLabels configures the receiver to add human-readable labels to
 	// metrics using the Oxide API.
 	AddLabels bool `mapstructure:"add_labels"`
+
+	// InsecureSkipVerify configures the receiver to skip TLS certificate
+	// verification when connecting to the Oxide API.
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
 }
 
 func (cfg *Config) Validate() error {
