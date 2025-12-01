@@ -34,8 +34,8 @@ github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest v0.139.0
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatatest v0.139.0/go.mod h1:0v3C+DUgl/J/Q9g/xK5m0nsYnHgqzH5ICEtCzalO2uY=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.139.0 h1:6/j0Ta8ZJnmAFVEoC3aZ1Hs19RB4fHzlN6kOZhsBJqM=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.139.0/go.mod h1:VfA8xHz4xg7Fyj5bBsCDbOO3iVYzDn9wP/QFsjcAE5c=
-github.com/oxidecomputer/oxide.go v0.7.0 h1:ZRxH3vSgwZys/dsQthphW4o57xp0BivUCkND18b5nr4=
-github.com/oxidecomputer/oxide.go v0.7.0/go.mod h1:e/Azkl4nFUrsdsJ113siW/ZNUQkiG539e4i7a6GEcD8=
+github.com/oxidecomputer/oxide.go v0.7.1-0.20251201173841-5ed6c4368ef0 h1:beJ4iu/NkpF3xn9ImTSn7pMlst03jDGoocG6BtzJiKU=
+github.com/oxidecomputer/oxide.go v0.7.1-0.20251201173841-5ed6c4368ef0/go.mod h1:e/Azkl4nFUrsdsJ113siW/ZNUQkiG539e4i7a6GEcD8=
 github.com/pelletier/go-toml v1.9.5 h1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=
 github.com/pelletier/go-toml v1.9.5/go.mod h1:u1nR/EPcESfeI/szUZKdtJ0xRNbUoANCkoOuaOx1Y+c=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
