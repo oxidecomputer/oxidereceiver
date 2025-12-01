@@ -24,7 +24,7 @@ func NewFactory() receiver.Factory {
 func createDefaultConfig() component.Config {
 	return &Config{
 		MetricPatterns:    []string{".*"},
-		ScrapeConcurrency: 25,
+		ScrapeConcurrency: 16,
 		QueryLookback:     "5m",
 	}
 }

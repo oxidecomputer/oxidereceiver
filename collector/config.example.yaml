@@ -1,6 +1,7 @@
 receivers:
   oxide:
-    # Note: uncomment to configure Oxide API. By default, the collector uses $OXIDE_PROFILE.
+    # Note: uncomment to configure Oxide API authentication. By default, the
+    # collector uses the $OXIDE_{PROFILE,HOST,TOKEN} environment variables.
     # host: ${env:OXIDE_HOST}
     # token: ${env:OXIDE_TOKEN}
     metric_patterns:
@@ -15,6 +16,9 @@ processors:
 exporters:
   prometheus:
     endpoint: "0.0.0.0:9091"
+    translation_strategy: UnderscoreEscapingWithSuffixes
+    resource_to_telemetry_conversion:
+      enabled: true
 
 service:
   telemetry:
