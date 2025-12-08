@@ -8,6 +8,8 @@ receivers:
     - virtual_machine:.*
     - virtual_disk:.*
     - hardware_component:.*
+    add_labels: true
+    add_utilization_metrics: true
     collection_interval: 60s
 
 processors:
