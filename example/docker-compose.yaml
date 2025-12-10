@@ -1,0 +1,26 @@
+services:
+  otelcol:
+    build:
+      context: ..
+      dockerfile: example/Dockerfile
+    environment:
+    - OXIDE_HOST=${OXIDE_HOST}
+    - OXIDE_TOKEN=${OXIDE_TOKEN}
+    volumes:
+    - ../collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+    - "9091:9091"
+    - "8888:8888"
+
+  prometheus:
+    image: prom/prometheus:v3.8.0
+    volumes:
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - prometheus_data:/prometheus
+    ports:
+    - "9090:9090"
+    depends_on:
+    - otelcol
+
+volumes:
+  prometheus_data:

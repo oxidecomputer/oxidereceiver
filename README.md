@@ -45,6 +45,19 @@ Create a `collector/config.yaml` file with your collector configuration, or copy
 ./dist/otelcol-oxide --config collector/config.yaml
 ```
 
+If using the default configuration, you can check metrics in Prometheus format at `http://localhost:9091/metrics`.
+
+### Running the Collector with Docker Compose
+
+We provide an example Dockerfile and Docker Compose manifest to run the Collector, along with a Prometheus instance to persist metrics. Note: the Docker Compose manifest doesn't mount your Oxide configuration file, so you can't authenticate using Oxide profiles. Instead, either set the `OXIDE_HOST` and `OXIDE_TOKEN` environment variables, or add authentication details to your OpenTelemetry configuration file.
+
+```bash
+./dist/otelcol-oxide --config collector/config.yaml
+docker compose -f example/docker-compose.yaml up
+```
+
+Once the example is running, you can access the Prometheus instance at http://localhost:9090.
+
 ## Development
 
 ### Running Tests
