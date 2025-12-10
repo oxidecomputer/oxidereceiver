@@ -23,6 +23,10 @@ type Config struct {
 	// metrics using the Oxide API.
 	AddLabels bool `mapstructure:"add_labels"`
 
+	// AddUtilizationMetrics configures the receiver to add silo utilization
+	// metrics (cpu, memory, disk) with provisioned and allocated values.
+	AddUtilizationMetrics bool `mapstructure:"add_utilization_metrics"`
+
 	// InsecureSkipVerify configures the receiver to skip TLS certificate
 	// verification when connecting to the Oxide API.
 	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`

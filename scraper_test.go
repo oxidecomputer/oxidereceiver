@@ -370,6 +370,78 @@ func TestAddPoint(t *testing.T) {
 	}
 }
 
+func TestAddSiloUtilizationMetrics(t *testing.T) {
+	now := time.Now()
+	timestamp := pcommon.NewTimestampFromTime(now)
+
+	siloID := "550e8400-e29b-41d4-a716-446655440000"
+	siloName := "test-silo"
+	cpus := 4
+
+	utilizations := []oxide.SiloUtilization{
+		{
+			SiloId:   siloID,
+			SiloName: oxide.Name(siloName),
+			Provisioned: oxide.VirtualResourceCounts{
+				Cpus:    &cpus,
+				Memory:  1024,
+				Storage: 2048,
+			},
+			Allocated: oxide.VirtualResourceCounts{
+				Cpus:    &cpus,
+				Memory:  2048,
+				Storage: 4096,
+			},
+		},
+	}
+
+	makeDataPoint := func(value int64, resourceType string) pmetric.NumberDataPoint {
+		dp := pmetric.NewNumberDataPoint()
+		dp.SetTimestamp(timestamp)
+		dp.SetIntValue(value)
+		dp.Attributes().PutStr("silo_id", siloID)
+		dp.Attributes().PutStr("silo_name", siloName)
+		dp.Attributes().PutStr("type", resourceType)
+		return dp
+	}
+
+	wantMetrics := map[string][]pmetric.NumberDataPoint{
+		"silo_utilization.cpu": {
+			makeDataPoint(4, "provisioned"),
+			makeDataPoint(4, "allocated"),
+		},
+		"silo_utilization.memory": {
+			makeDataPoint(1024, "provisioned"),
+			makeDataPoint(2048, "allocated"),
+		},
+		"silo_utilization.disk": {
+			makeDataPoint(2048, "provisioned"),
+			makeDataPoint(4096, "allocated"),
+		},
+	}
+
+	metrics := pmetric.NewMetrics()
+	addSiloUtilizationMetrics(metrics, utilizations, timestamp)
+
+	require.Equal(t, 1, metrics.ResourceMetrics().Len())
+	sm := metrics.ResourceMetrics().At(0).ScopeMetrics().At(0)
+	require.Equal(t, len(wantMetrics), sm.Metrics().Len())
+
+	for i := 0; i < sm.Metrics().Len(); i++ {
+		m := sm.Metrics().At(i)
+		wantDataPoints, ok := wantMetrics[m.Name()]
+		require.True(t, ok, "unexpected metric: %s", m.Name())
+
+		gauge := m.Gauge()
+		require.Equal(t, len(wantDataPoints), gauge.DataPoints().Len())
+
+		for j, wantDataPoint := range wantDataPoints {
+			err := pmetrictest.CompareNumberDataPoint(wantDataPoint, gauge.DataPoints().At(j))
+			require.NoError(t, err, "metric %s, data point %d", m.Name(), j)
+		}
+	}
+}
+
 func TestAddHistogram(t *testing.T) {
 	now := time.Now()
 	table := oxide.OxqlTable{Name: "test_metric"}

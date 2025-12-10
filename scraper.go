@@ -299,7 +299,68 @@ func (s *oxideScraper) Scrape(ctx context.Context) (pmetric.Metrics, error) {
 		s.apiRequestDuration.Record(ctx, latencies[idx].Seconds(), metric.WithAttributes(attribute.String("request_name", metricName)))
 	}
 
+	if s.cfg.AddUtilizationMetrics {
+		if err := s.addSiloUtilization(ctx, metrics); err != nil {
+			return metrics, fmt.Errorf("adding silo utilization metrics: %w", err)
+		}
+	}
+
 	return metrics, nil
+}
+
+// addSiloUtilization adds metrics for allocated and provisioned silo resources, including cpu, memory, and disk.
+//
+// TODO: Implement this via oximeter rather than deriving metrics from the API.
+func (s *oxideScraper) addSiloUtilization(ctx context.Context, metrics pmetric.Metrics) error {
+	resp, err := s.client.SiloUtilizationListAllPages(ctx, oxide.SiloUtilizationListParams{})
+	if err != nil {
+		return err
+	}
+	addSiloUtilizationMetrics(metrics, resp, pcommon.NewTimestampFromTime(time.Now()))
+	return nil
+}
+
+// addSiloUtilizationMetrics adds silo utilization data to the metrics.
+func addSiloUtilizationMetrics(metrics pmetric.Metrics, utilizations []oxide.SiloUtilization, timestamp pcommon.Timestamp) {
+	rm := metrics.ResourceMetrics().AppendEmpty()
+	sm := rm.ScopeMetrics().AppendEmpty()
+
+	addGauge := func(name string) pmetric.Gauge {
+		m := sm.Metrics().AppendEmpty()
+		m.SetName(name)
+		return m.SetEmptyGauge()
+	}
+
+	cpuGauge := addGauge("silo_utilization.cpu")
+	memoryGauge := addGauge("silo_utilization.memory")
+	diskGauge := addGauge("silo_utilization.disk")
+
+	for _, su := range utilizations {
+		addDataPoint := func(gauge pmetric.Gauge, value int64, resourceType string) {
+			dp := gauge.DataPoints().AppendEmpty()
+			dp.SetTimestamp(timestamp)
+			dp.SetIntValue(value)
+			dp.Attributes().PutStr("silo_id", su.SiloId)
+			dp.Attributes().PutStr("silo_name", string(su.SiloName))
+			dp.Attributes().PutStr("type", resourceType)
+		}
+
+		for _, res := range []struct {
+			counts       oxide.VirtualResourceCounts
+			resourceType string
+		}{
+			{su.Provisioned, "provisioned"},
+			{su.Allocated, "allocated"},
+		} {
+			cpus := int64(0)
+			if res.counts.Cpus != nil {
+				cpus = int64(*res.counts.Cpus)
+			}
+			addDataPoint(cpuGauge, cpus, res.resourceType)
+			addDataPoint(memoryGauge, int64(res.counts.Memory), res.resourceType)
+			addDataPoint(diskGauge, int64(res.counts.Storage), res.resourceType)
+		}
+	}
 }
 
 func addLabels(series oxide.Timeseries, table oxide.OxqlTable, resource pcommon.Resource) error {
