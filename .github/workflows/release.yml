@@ -1,0 +1,63 @@
+name: release
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+        - goos: linux
+          goarch: amd64
+        - goos: linux
+          goarch: arm64
+        - goos: darwin
+          goarch: amd64
+        - goos: darwin
+          goarch: arm64
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - run: make install-builder
+
+    - run: builder --config collector/manifest.yaml
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+
+    - run: |
+        mv dist/otelcol-oxide dist/otelcol-oxide-${{ matrix.goos }}-${{ matrix.goarch }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: otelcol-oxide-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/otelcol-oxide-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist
+        merge-multiple: true
+
+    - working-directory: dist
+      run: sha256sum otelcol-oxide-* > checksums.txt
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/otelcol-oxide-*
+          dist/checksums.txt
+        generate_release_notes: true
