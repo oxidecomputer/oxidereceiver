@@ -2,7 +2,7 @@ services:
   otelcol:
     build:
       context: ..
-      dockerfile: example/Dockerfile
+      dockerfile: collector/Dockerfile
     environment:
     - OXIDE_HOST=${OXIDE_HOST}
     - OXIDE_TOKEN=${OXIDE_TOKEN}

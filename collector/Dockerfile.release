@@ -1,0 +1,13 @@
+FROM alpine:3.21
+
+ARG TARGETARCH
+
+RUN apk add --no-cache ca-certificates
+
+COPY otelcol-oxide-linux-${TARGETARCH} /otelcol-oxide
+RUN chmod +x /otelcol-oxide
+
+EXPOSE 9091 8888
+
+ENTRYPOINT ["/otelcol-oxide"]
+CMD ["--config", "/etc/otelcol/config.yaml"]
