@@ -442,7 +442,11 @@ func addHistogram(dataPoints pmetric.HistogramDataPointSlice, quantileGauge pmet
 				dp.SetCount(uint64(total))
 				dp.SetTimestamp(pcommon.NewTimestampFromTime(timestamps[idx]))
 
-				addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99}, dp.Timestamp())
+				addQuantiles(quantileGauge, []quantileValue{
+					{quantile: 0.5, value: distValue.P50},
+					{quantile: 0.9, value: distValue.P90},
+					{quantile: 0.99, value: distValue.P99},
+				}, dp.Timestamp())
 			case oxide.ValueArrayTypeDoubleDistribution:
 				// Unmarshal the marshalled JSON back to the expected histogram type.
 				var distValue oxide.Distributiondouble
@@ -465,7 +469,11 @@ func addHistogram(dataPoints pmetric.HistogramDataPointSlice, quantileGauge pmet
 				dp.SetCount(uint64(total))
 				dp.SetTimestamp(pcommon.NewTimestampFromTime(timestamps[idx]))
 
-				addQuantiles(quantileGauge, []oxide.Quantile{distValue.P50, distValue.P90, distValue.P99}, dp.Timestamp())
+				addQuantiles(quantileGauge, []quantileValue{
+					{quantile: 0.5, value: distValue.P50},
+					{quantile: 0.9, value: distValue.P90},
+					{quantile: 0.99, value: distValue.P99},
+				}, dp.Timestamp())
 			}
 		}
 	}
@@ -541,16 +549,22 @@ func addPoint(dataPoints pmetric.NumberDataPointSlice, table oxide.OxqlTable, se
 	return nil
 }
 
-// addQuantiles emits metrics for a slice of oxide.Quantile values. In addition
+// quantileValue represents a quantile estimate with its percentile and value.
+type quantileValue struct {
+	quantile float64
+	value    float64
+}
+
+// addQuantiles emits metrics for a slice of quantileValue values. In addition
 // to histogram buckets and counts, OxQL exposes a set of predefined quantile
 // estimates using the P² algorithm, which we extract here.
-func addQuantiles(g pmetric.Gauge, quantiles []oxide.Quantile, timestamp pcommon.Timestamp) []pmetric.NumberDataPoint {
+func addQuantiles(g pmetric.Gauge, quantiles []quantileValue, timestamp pcommon.Timestamp) []pmetric.NumberDataPoint {
 	points := []pmetric.NumberDataPoint{}
 	for _, quantile := range quantiles {
 		p := g.DataPoints().AppendEmpty()
 		p.SetTimestamp(timestamp)
-		p.SetDoubleValue(quantile.MarkerHeights[2])
-		p.Attributes().PutDouble("quantile", quantile.P)
+		p.SetDoubleValue(quantile.value)
+		p.Attributes().PutDouble("quantile", quantile.quantile)
 		points = append(points, p)
 	}
 	return points

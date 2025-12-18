@@ -466,18 +466,9 @@ func TestAddHistogram(t *testing.T) {
 									oxide.Distributionint64{
 										Bins:   []int{0, 1, 2},
 										Counts: []int{1, 2, 3},
-										P50: oxide.Quantile{
-											MarkerHeights: []float64{0.0, 1.0, 1.5, 1.8, 2.0},
-											P:             0.5,
-										},
-										P90: oxide.Quantile{
-											MarkerHeights: []float64{0.0, 1.0, 1.9, 1.95, 2.0},
-											P:             0.9,
-										},
-										P99: oxide.Quantile{
-											MarkerHeights: []float64{0.0, 1.0, 1.99, 1.995, 2.0},
-											P:             0.99,
-										},
+										P50:    1.5,
+										P90:    1.9,
+										P99:    1.99,
 									},
 								},
 							},
@@ -532,18 +523,9 @@ func TestAddHistogram(t *testing.T) {
 									oxide.Distributiondouble{
 										Bins:   []float64{0.0, 1.0, 2.0},
 										Counts: []int{1, 2, 3},
-										P50: oxide.Quantile{
-											MarkerHeights: []float64{0.0, 1.0, 1.5, 1.8, 2.0},
-											P:             0.5,
-										},
-										P90: oxide.Quantile{
-											MarkerHeights: []float64{0.0, 1.0, 1.9, 1.95, 2.0},
-											P:             0.9,
-										},
-										P99: oxide.Quantile{
-											MarkerHeights: []float64{0.0, 1.0, 1.99, 1.995, 2.0},
-											P:             0.99,
-										},
+										P50:    1.5,
+										P90:    1.9,
+										P99:    1.99,
 									},
 								},
 							},
